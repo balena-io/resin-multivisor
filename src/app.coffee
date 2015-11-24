@@ -9,46 +9,54 @@ config = require './config'
 request = require 'request'
 
 knex.init.then ->
-	utils.mixpanelTrack('Supervisor start')
+	utils.mixpanelProperties.uuid = process.env.RESIN_DEVICE_UUID
+	utils.mixpanelTrack('Multivisor start')
 
-	console.log('Starting connectivity check..')
-	utils.connectivityCheck()
+	#console.log('Starting connectivity check..')
+	#utils.connectivityCheck()
 
-	Promise.join bootstrap.startBootstrapping(), utils.getOrGenerateSecret('api'), utils.getOrGenerateSecret('logsChannel'), (uuid, secret, logsChannel) ->
-		# Persist the uuid in subsequent metrics
-		utils.mixpanelProperties.uuid = uuid
+	logsChannels = Promise.map(config.multivisor.apps, (app) ->
+		return { appId: app.appId, logsChannel: utils.getOrGenerateSecret("logsChannel#{app.appId}") }
+	).then (logsChannels) ->
+		channelsByAppId = _.indexBy(logsChannels, appId)
+		return _.mapValues channelsByAppId, (logsChannelObject) -> logsChannelObject.logsChannel
 
-		api = require './api'
-		application = require('./application')(logsChannel)
-		device = require './device'
+	bootstrap.startBootstrapping().then ->
+		Promise.join utils.getOrGenerateSecret('api'), logsChannels, (secret, logsChannels) ->
+			# Persist the uuid in subsequent metrics
 
-		bootstrap.done
-		.then ->
-			console.log('Starting API server..')
-			api(application).listen(config.listenPort)
-			# Let API know what version we are, and our api connection info.
-			console.log('Updating supervisor version and api info')
-			device.updateState(
-				api_port: config.listenPort
-				api_secret: secret
-				supervisor_version: utils.supervisorVersion
-				provisioning_progress: null
-				provisioning_state: ''
-				download_progress: null
-				logs_channel: logsChannel
-			)
+			api = require './api'
+			application = require('./application')(logsChannels)
+			device = require './device'
 
-		console.log('Starting Apps..')
-		application.initialize()
+			bootstrap.done
+			.then ->
+				console.log('Starting API server..')
+				api(application).listen(config.listenPort)
+				# Let API know what version we are, and our api connection info.
+				console.log('Updating supervisor version and api info')
+				_.map config.multivisor.apps, (app) ->
+					device.updateState app.appId, {
+						api_port: config.listenPort
+						api_secret: secret
+						supervisor_version: utils.supervisorVersion
+						provisioning_progress: null
+						provisioning_state: ''
+						download_progress: null
+						logs_channel: logsChannels[app.appId]
+					}
 
-		updateIpAddr = ->
-			callback = (error, response, body ) ->
-				if !error && response.statusCode == 200 && body.Data.IPAddresses?
-					device.updateState(
-						ip_address: body.Data.IPAddresses.join(' ')
-					)
-			request.get({ url: "#{config.gosuperAddress}/v1/ipaddr", json: true }, callback )
+			console.log('Starting Apps..')
+			application.initialize()
 
-		console.log('Starting periodic check for IP addresses..')
-		setInterval(updateIpAddr, 30 * 1000) # Every 30s
-		updateIpAddr()
+			#updateIpAddr = ->
+			#	callback = (error, response, body ) ->
+			#		if !error && response.statusCode == 200 && body.Data.IPAddresses?
+			#			device.updateState(
+			#				ip_address: body.Data.IPAddresses.join(' ')
+			#			)
+			#	request.get({ url: "#{config.gosuperAddress}/v1/ipaddr", json: true }, callback )
+
+			#console.log('Starting periodic check for IP addresses..')
+			#setInterval(updateIpAddr, 30 * 1000) # Every 30s
+			#updateIpAddr()

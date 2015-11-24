@@ -4,10 +4,9 @@ PUBNUB = require 'pubnub'
 Promise = require 'bluebird'
 es = require 'event-stream'
 
-disableLogs = false
-
 initialised = new Promise (resolve) ->
 	exports.init = (config) ->
+		pubnub = PUBNUB.init(config.pubnub)
 		resolve(config)
 
 dockerPromise = initialised.then (config) ->
@@ -17,43 +16,48 @@ dockerPromise = initialised.then (config) ->
 	Promise.promisifyAll(docker.getContainer().constructor.prototype)
 	return docker
 
-# Queue up any calls to publish logs whilst we wait to be initialised.
-publish = do ->
-	publishQueue = []
+exports.new = do ->
+	publishQueues = {}
+	disableLogs = {}
+	loggers = {}
+	return (channel) ->
+		disableLogs[channel] = false
 
-	initialised.then (config) ->
-		pubnub = PUBNUB.init(config.pubnub)
-		channel = config.channel
+		loggers[channel] = {
+			disableLogPublishing: (disable) ->
+				disableLogs[channel] = disable
+			log: ->
+				loggers[channel].publish(arguments...)
 
-		# Redefine original function
-		publish = (message) ->
-			# Disable sending logs for bandwidth control
-			return if disableLogs
-			if _.isString(message)
-				message = { message }
+			publish: do ->
+				publishQueues[channel] = []
 
-			_.defaults message,
-				timestamp: Date.now()
-				# Stop pubnub logging loads of "Missing Message" errors, as they are quite distracting
-				message: ' '
+				initialised.then (config) ->
+					# Redefine original function
+					loggers[channel].publish = (message) ->
+						# Disable sending logs for bandwidth control
+						return if disableLogs[channel]
+						if _.isString(message)
+							message = { message }
 
-			pubnub.publish({ channel, message })
+						_.defaults message,
+							timestamp: Date.now()
+							# Stop pubnub logging loads of "Missing Message" errors, as they are quite distracting
+							message: ' '
 
-		# Replay queue now that we have initialised the publish function
-		publish(args...) for args in publishQueue
+						pubnub.publish({ channel, message })
 
-	return -> publishQueue.push(arguments)
+					# Replay queue now that we have initialised the publish function
+					publish(args...) for args in publishQueues[channel]
 
-# disable: A Boolean to pause the Log Publishing - Logs are lost when paused.
-exports.disableLogPublishing = (disable) ->
-	disableLogs = disable
+				return -> publishQueue.push(arguments)
 
-exports.log = ->
-	publish(arguments...)
+			attach: (app) ->
+				dockerPromise.then (docker) ->
+					docker.getContainer(app.containerId)
+					.attachAsync({ stream: true, stdout: true, stderr: true, tty: true })
+					.then (stream) ->
+						stream.pipe(es.split()).on('data', loggers[channel].publish)
+		}
 
-exports.attach = (app) ->
-	dockerPromise.then (docker) ->
-		docker.getContainer(app.containerId)
-		.attachAsync({ stream: true, stdout: true, stderr: true, tty: true })
-		.then (stream) ->
-			stream.pipe(es.split()).on('data', publish)
+		return loggers[channel]

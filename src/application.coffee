@@ -8,7 +8,7 @@ dockerUtils = require './docker-utils'
 Promise = require 'bluebird'
 utils = require './utils'
 tty = require './lib/tty'
-logger = require './lib/logger'
+Logger = require './lib/logger'
 { cachedResinApi } = require './request'
 device = require './device'
 lockFile = Promise.promisifyAll(require('lockfile'))
@@ -80,7 +80,7 @@ logSystemEvent = (logType, app, error) ->
 		if _.isEmpty(errMessage)
 			errMessage = 'Unknown cause'
 		message += " due to '#{errMessage}'"
-	logger.log({ message, isSystem: true })
+	loggers[app.appId].log({ message, isSystem: true })
 	utils.mixpanelTrack(logType.eventName, {app, error})
 	return
 
@@ -88,7 +88,7 @@ application = {}
 
 application.kill = kill = (app, updateDB = true) ->
 	logSystemEvent(logTypes.stopApp, app)
-	device.updateState(status: 'Stopping')
+	device.updateState(app.appId, status: 'Stopping')
 	container = docker.getContainer(app.containerId)
 	tty.stop(app)
 	.catch (err) ->
@@ -129,12 +129,12 @@ fetch = (app) ->
 	docker.getImage(app.imageId).inspectAsync()
 	.catch (error) ->
 		logSystemEvent(logTypes.downloadApp, app)
-		device.updateState(status: 'Downloading')
+		device.updateState(app.appId, status: 'Downloading')
 		dockerUtils.fetchImageWithProgress app.imageId, (progress) ->
-			device.updateState(download_progress: progress.percentage)
+			device.updateState(app.appId, download_progress: progress.percentage)
 		.then ->
 			logSystemEvent(logTypes.downloadAppSuccess, app)
-			device.updateState(download_progress: null)
+			device.updateState(app.appId, download_progress: null)
 			docker.getImage(app.imageId).inspectAsync()
 		.catch (err) ->
 			logSystemEvent(logTypes.downloadAppError, app, err)
@@ -176,7 +176,7 @@ application.start = start = (app) ->
 			fetch(app)
 			.then (imageInfo) ->
 				logSystemEvent(logTypes.installApp, app)
-				device.updateState(status: 'Installing')
+				device.updateState(app.appId, status: 'Installing')
 
 				ports = {}
 				if portList?
@@ -210,7 +210,7 @@ application.start = start = (app) ->
 				knex('app').insert(app) if affectedRows == 0
 		.tap (container) ->
 			logSystemEvent(logTypes.startApp, app)
-			device.updateState(status: 'Starting')
+			device.updateState(app.appId, status: 'Starting')
 			ports = {}
 			if portList?
 				portList.forEach (port) ->
@@ -229,12 +229,12 @@ application.start = start = (app) ->
 				logSystemEvent(logTypes.startAppError, app, err)
 				throw err
 			.then ->
-				device.updateState(commit: app.commit)
-				logger.attach(app)
+				device.updateState(app.appId, commit: app.commit)
+				loggers[app.appId].attach(app)
 	.tap ->
 		logSystemEvent(logTypes.startAppSuccess, app)
 	.finally ->
-		device.updateState(status: 'Idle')
+		device.updateState(app.appId, status: 'Idle')
 
 getEnvironment = do ->
 	envApiEndpoint = url.resolve(config.apiEndpoint, '/environment')
@@ -325,10 +325,10 @@ executeSpecialActionsAndBootConfig = (env) ->
 				if !_.has(executedSpecialActionEnvVars, key) or executedSpecialActionEnvVars[key] != env[key]
 					specialActionCallback(env[key])
 					executedSpecialActionEnvVars[key] = env[key]
-		bootConfigVars = _.pick env, (val, key) ->
-			return _.startsWith(key, device.bootConfigEnvVarPrefix)
-		if !_.isEmpty(bootConfigVars)
-			device.setBootConfig(bootConfigVars)
+		#bootConfigVars = _.pick env, (val, key) ->
+		#	return _.startsWith(key, device.bootConfigEnvVarPrefix)
+		#if !_.isEmpty(bootConfigVars)
+		#	device.setBootConfig(bootConfigVars)
 
 wrapAsError = (err) ->
 	return err if _.isError(err)
@@ -419,7 +419,7 @@ updateUsingStrategy = (strategy, options) ->
 		strategy = 'download-then-kill'
 	updateStrategies[strategy](options)
 
-getRemoteApps = (uuid, apiKey) ->
+getRemoteApps = (apiKey) ->
 	cachedResinApi.get
 		resource: 'application'
 		options:
@@ -430,17 +430,16 @@ getRemoteApps = (uuid, apiKey) ->
 			]
 			filter:
 				commit: $ne: null
-				device:
-					uuid: uuid
+				id: _.map(config.multivisor.apps, (app) -> app.appId)
 		customOptions:
 			apikey: apiKey
 
-getEnvAndFormatRemoteApps = (deviceId, remoteApps, uuid, apiKey) ->
+getEnvAndFormatRemoteApps = (deviceIds, remoteApps, uuids, apiKey) ->
 	Promise.map remoteApps, (app) ->
-		getEnvironment(app.id, deviceId, apiKey)
+		getEnvironment(app.id, deviceId[app.id], apiKey)
 		.then (environment) ->
 			app.environment_variable = environment
-			utils.extendEnvVars(app.environment_variable, uuid)
+			utils.extendEnvVars(app.environment_variable, uuids[app.id])
 		.then (fullEnv) ->
 			env = _.omit(fullEnv, _.keys(specialActionEnvVars))
 			return [
@@ -498,11 +497,15 @@ application.update = update = (force) ->
 		return
 	updateStatus.state = UPDATE_UPDATING
 	bootstrap.done.then ->
-		Promise.join getConfig('apiKey'), getConfig('uuid'), knex('app').select(), (apiKey, uuid, apps) ->
-			deviceId = device.getID()
-			remoteApps = getRemoteApps(uuid, apiKey)
+		Promise.join getConfig('apiKey'), knex('app').select(), (apiKey, apps) ->
+			apps = _.reject apps, (app) -> !app.imageId?
+			deviceIds = Promise.map config.multivisor.apps, (app) ->
+				device.getID(app.appId)
+			uuids = Promise.map config.multivisor.apps, (app) ->
+				device.getUUID(app.appId)
+			remoteApps = getRemoteApps(apiKey)
 
-			Promise.join deviceId, remoteApps, uuid, apiKey, getEnvAndFormatRemoteApps
+			Promise.join deviceIds, remoteApps, uuids, apiKey, getEnvAndFormatRemoteApps
 			.then ([ remoteAppEnvs, remoteApps ]) ->
 				{ localApps, localAppEnvs } = formatLocalApps(apps)
 				resourcesForUpdate = compareForUpdate(localApps, remoteApps, localAppEnvs, remoteAppEnvs)
@@ -583,7 +586,7 @@ application.update = update = (force) ->
 			console.log('Scheduling another update attempt due to failure: ', delayTime, err)
 			setTimeout(update, delayTime, force)
 		.finally ->
-			device.updateState(status: 'Idle')
+			device.updateState(app.appId, status: 'Idle')
 			if updateStatus.state is UPDATE_REQUIRED
 				# If an update is required then schedule it
 				setTimeout(update, 1, updateStatus.forceNext)
@@ -605,10 +608,13 @@ application.initialize = ->
 		application.poll()
 		application.update()
 
-module.exports = (logsChannel) ->
-	logger.init(
+application.loggers = loggers = {}
+
+module.exports = (logsChannels) ->
+	Logger.init(
 		dockerSocket: config.dockerSocket
 		pubnub: config.pubnub
-		channel: "device-#{logsChannel}-logs"
 	)
+	_.map config.multivisor.app, (app) ->
+		application.loggers[app.appId] = Logger.new("device-#{logsChannels[app.appId]}-logs")
 	return application

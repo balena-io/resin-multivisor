@@ -4,109 +4,90 @@ knex = require './db'
 utils = require './utils'
 deviceRegister = require 'resin-register-device'
 { resinApi } = require './request'
-fs = Promise.promisifyAll(require('fs'))
-EventEmitter = require('events').EventEmitter
+
 config = require './config'
-configPath = '/boot/config.json'
-appsPath  = '/boot/apps.json'
-userConfig = {}
+device = require './device'
 
 DuplicateUuidError = (err) ->
 	return err.message == '"uuid" must be unique.'
 
 bootstrapper = {}
 
-loadPreloadedApps = ->
-	knex('app').truncate()
-	.then ->
-		fs.readFileAsync(appsPath, 'utf8')
-	.then(JSON.parse)
-	.map (app) ->
-		utils.extendEnvVars(app.env, userConfig.uuid)
-		.then (extendedEnv) ->
-			app.env = JSON.stringify(extendedEnv)
-			knex('app').insert(app)
-	.catch (err) ->
-		utils.mixpanelTrack('Loading preloaded apps failed', {error: err})
-
-bootstrap = ->
+bootstrap = (app) ->
+	userConfig = {
+		deviceType: config.multivisor.deviceType
+		uuid: app.uuid
+		applicationId: app.appId
+		userId: config.multivisor.userId
+		apiKey: config.multivisor.apiKey
+	}
 	Promise.try ->
-		userConfig.deviceType ?= 'raspberry-pi'
-		if userConfig.registered_at?
-			return userConfig
 		deviceRegister.register(resinApi, userConfig)
 		.catch DuplicateUuidError, ->
-			resinApi.get
-				resource: 'device'
-				options:
-					filter:
-						uuid: userConfig.uuid
-				customOptions:
-					apikey: userConfig.apiKey
-			.then ([ device ]) ->
-				return device
-		.then (device) ->
-			userConfig.registered_at = Date.now()
-			userConfig.deviceId = device.id
-			fs.writeFileAsync(configPath, JSON.stringify(userConfig))
-		.return(userConfig)
-	.then (userConfig) ->
-		console.log('Finishing bootstrapping')
-		Promise.all([
-			knex('config').whereIn('key', ['uuid', 'apiKey', 'username', 'userId', 'version']).delete()
-			.then ->
-				knex('config').insert([
-					{ key: 'uuid', value: userConfig.uuid }
-					{ key: 'apiKey', value: userConfig.apiKey }
-					{ key: 'username', value: userConfig.username }
-					{ key: 'userId', value: userConfig.userId }
-					{ key: 'version', value: utils.supervisorVersion }
-				])
-		])
-		.tap ->
-			bootstrapper.doneBootstrapping()
+	.then ->
+		bootstrapper.doneBootstrapping[app.appId]()
 
-readConfigAndEnsureUUID = ->
-	# Load config file
-	fs.readFileAsync(configPath, 'utf8')
-	.then(JSON.parse)
-	.then (configFromFile) ->
-		userConfig = configFromFile
-		return userConfig.uuid if userConfig.uuid?
-		deviceRegister.generateUUID()
-		.then (uuid) ->
-			userConfig.uuid = uuid
-			fs.writeFileAsync(configPath, JSON.stringify(userConfig))
-			.return(uuid)
+generateUUIDsAndLoadPreloadedApps = ->
+	knex('app').select()
+	.then (apps) ->
+		Promise.map config.multivisor.apps, (configApp) ->
+			savedApp = _.find apps, (a) -> a.appId = configApp.appId
+			return savedApp if savedApp?
+			deviceRegister.generateUUID()
+			.then (uuid) ->
+				appToSave = configApp
+				Promise.try ->
+					return utils.extendEnvVars(appToSave.env, uuid) if config.multivisor.isPreloaded
+					return appToSave.env
+				.then (extendedEnv) ->
+					appToSave.env = extendedEnv
+					appToSave.uuid = uuid
+					knex('app').insert(appToSave)
+					.return(appToSave)
 	.catch (err) ->
 		console.log('Error generating and saving UUID: ', err)
 		Promise.delay(config.bootstrapRetryDelay)
 		.then ->
-			readConfigAndEnsureUUID()
+			generateUUIDsAndLoadPreloadedApps()
 
-bootstrapOrRetry = ->
-	utils.mixpanelTrack('Device bootstrap')
-	bootstrap().catch (err) ->
-		utils.mixpanelTrack('Device bootstrap failed, retrying', {error: err, delay: config.bootstrapRetryDelay})
-		setTimeout(bootstrapOrRetry, config.bootstrapRetryDelay)
 
-bootstrapper.done = new Promise (resolve) ->
-	bootstrapper.doneBootstrapping = ->
-		bootstrapper.bootstrapped = true
-		resolve(userConfig)
+
+bootstrapOrRetry = (app) ->
+	utils.mixpanelTrack('Device bootstrap', { app })
+	bootstrap(app).catch (err) ->
+		utils.mixpanelTrack('Device bootstrap failed, retrying', { app, error: err, delay: config.bootstrapRetryDelay })
+		setTimeout( -> bootstrapOrRetry(app), config.bootstrapRetryDelay)
+
+bootstrapper.doneBootstrapping = {}
+bootstrapper.done = Promise.map(config.multivisor.apps, (app) ->
+	new Promise (resolve) ->
+		bootstrapper.doneBootstrapping[app.appId] = ->
+			resolve()
+).then ->
+	console.log('Finishing bootstrapping')
+	Promise.all([
+		knex('config').whereIn('key', ['apiKey', 'username', 'userId', 'version']).delete()
+		.then ->
+			knex('config').insert([
+				{ key: 'apiKey', value: userConfig.apiKey }
+				{ key: 'username', value: userConfig.username }
+				{ key: 'userId', value: userConfig.userId }
+				{ key: 'version', value: utils.supervisorVersion }
+				{ key: 'bootstrapped', value: '1' }
+			])
+	])
+.then ->
+	bootstrapper.bootstrapped = true
 
 bootstrapper.bootstrapped = false
 bootstrapper.startBootstrapping = ->
-	knex('config').select('value').where(key: 'uuid')
-	.then ([ uuid ]) ->
-		if uuid?.value
+	knex('config').select('value').where(key: 'bootstrapped')
+	.then ([ bootstrapped ]) ->
+		if bootstrapped?.value == '1'
 			bootstrapper.doneBootstrapping()
-			return uuid.value
+			return
 		console.log('New device detected. Bootstrapping..')
-		readConfigAndEnsureUUID()
-		.tap ->
-			loadPreloadedApps()
-		.tap ->
-			bootstrapOrRetry()
+		generateUUIDsAndLoadPreloadedApps()
+		.map(bootstrapOrRetry)
 
 module.exports = bootstrapper

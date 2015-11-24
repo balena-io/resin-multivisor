@@ -5,22 +5,25 @@ utils = require './utils'
 { resinApi } = require './request'
 device = exports
 config = require './config'
-configPath = '/boot/config.json'
 request = Promise.promisifyAll(require('request'))
 execAsync = Promise.promisify(require('child_process').exec)
 fs = Promise.promisifyAll(require('fs'))
+
+exports.getUUID = getUUID = (appId) ->
+	knex('apps').select('uuid').where({ appId }).get(0).get('uuid')
+
 exports.getID = do ->
-	deviceIdPromise = null
-	return ->
+	deviceIdPromises = {}
+	return (appId) ->
 		# We initialise the rejected promise just before we catch in order to avoid a useless first unhandled error warning.
-		deviceIdPromise ?= Promise.rejected()
+		deviceIdPromises[appId] ?= Promise.rejected()
 		# Only fetch the device id once (when successful, otherwise retry for each request)
-		deviceIdPromise = deviceIdPromise.catch ->
+		deviceIdPromises[appId] = deviceIdPromises[appId].catch ->
 			Promise.all([
 				knex('config').select('value').where(key: 'apiKey')
-				knex('config').select('value').where(key: 'uuid')
+				getUUID(appId)
 			])
-			.spread ([{value: apiKey}], [{value: uuid}]) ->
+			.spread ([{value: apiKey}], uuid) ->
 				resinApi.get(
 					resource: 'device'
 					options:
@@ -35,120 +38,115 @@ exports.getID = do ->
 					throw new Error('Could not find this device?!')
 				return devices[0].id
 
-rebootDevice = ->
-	request.postAsync(config.gosuperAddress + '/v1/reboot')
+#rebootDevice = ->
+#	request.postAsync(config.gosuperAddress + '/v1/reboot')
 
-exports.bootConfigEnvVarPrefix = bootConfigEnvVarPrefix = 'RESIN_HOST_CONFIG_'
-bootBlockDevice = '/dev/mmcblk0p1'
-bootMountPoint = '/mnt/root/boot'
-bootConfigPath = bootMountPoint + '/config.txt'
-configRegex = new RegExp('(' + _.escapeRegExp(bootConfigEnvVarPrefix) + ')(.+)')
-forbiddenConfigKeys = [
-	'disable_commandline_tags'
-	'cmdline'
-	'kernel'
-	'kernel_address'
-	'kernel_old'
-	'ramfsfile'
-	'ramfsaddr'
-	'initramfs'
-	'device_tree_address'
-	'init_uart_baud'
-	'init_uart_clock'
-	'init_emmc_clock'
-	'boot_delay'
-	'boot_delay_ms'
-	'avoid_safe_mode'
-]
-parseBootConfigFromEnv = (env) ->
-	# We ensure env doesn't have garbage
-	parsedEnv = _.pick env, (val, key) ->
-		return _.startsWith(key, bootConfigEnvVarPrefix)
-	parsedEnv = _.mapKeys parsedEnv, (val, key) ->
-		key.replace(configRegex, '$2')
-	parsedEnv = _.omit(parsedEnv, forbiddenConfigKeys)
-	return parsedEnv
+#exports.bootConfigEnvVarPrefix = bootConfigEnvVarPrefix = 'RESIN_HOST_CONFIG_'
+#bootBlockDevice = '/dev/mmcblk0p1'
+#bootMountPoint = '/mnt/root/boot'
+#bootConfigPath = bootMountPoint + '/config.txt'
+#configRegex = new RegExp('(' + _.escapeRegExp(bootConfigEnvVarPrefix) + ')(.+)')
+#forbiddenConfigKeys = [
+#	'disable_commandline_tags'
+#	'cmdline'
+#	'kernel'
+#	'kernel_address'
+#	'kernel_old'
+#	'ramfsfile'
+#	'ramfsaddr'
+#	'initramfs'
+#	'device_tree_address'
+#	'init_uart_baud'
+#	'init_uart_clock'
+#	'init_emmc_clock'
+#	'boot_delay'
+#	'boot_delay_ms'
+#	'avoid_safe_mode'
+#]
+#parseBootConfigFromEnv = (env) ->
+#	# We ensure env doesn't have garbage
+#	parsedEnv = _.pick env, (val, key) ->
+#		return _.startsWith(key, bootConfigEnvVarPrefix)
+#	parsedEnv = _.mapKeys parsedEnv, (val, key) ->
+#		key.replace(configRegex, '$2')
+#	parsedEnv = _.omit(parsedEnv, forbiddenConfigKeys)
+#	return parsedEnv
 
-exports.setBootConfig = (env) ->
-	device.getDeviceType()
-	.then (deviceType) ->
-		throw new Error('This is not a Raspberry Pi') if !_.startsWith(deviceType, 'raspberry-pi')
-		Promise.join parseBootConfigFromEnv(env), fs.readFileAsync(bootConfigPath, 'utf8'), (configFromApp, configTxt ) ->
-			throw new Error('No boot config to change') if _.isEmpty(configFromApp)
-			configFromFS = {}
-			configPositions = []
-			configStatements = configTxt.split(/\r?\n/)
-			_.each configStatements, (configStr) ->
-				keyValue = /^([^#=]+)=(.+)/.exec(configStr)
-				if keyValue?
-					configPositions.push(keyValue[1])
-					configFromFS[keyValue[1]] = keyValue[2]
-				else
-					# This will ensure config.txt filters are in order
-					configPositions.push(configStr)
-			# configFromApp and configFromFS now have compatible formats
-			keysFromApp = _.keys(configFromApp)
-			keysFromFS = _.keys(configFromFS)
-			toBeAdded = _.difference(keysFromApp, keysFromFS)
-			toBeChanged = _.intersection(keysFromApp, keysFromFS)
-			toBeChanged = _.filter toBeChanged, (key) ->
-				configFromApp[key] != configFromFS[key]
-			throw new Error('Nothing to change') if _.isEmpty(toBeChanged) and _.isEmpty(toBeAdded)
-			# We add the keys to be added first so they are out of any filters
-			outputConfig = _.map toBeAdded, (key) -> "#{key}=#{configFromApp[key]}"
-			outputConfig = outputConfig.concat _.map configPositions, (key, index) ->
-				configStatement = null
-				if _.includes(toBeChanged, key)
-					configStatement = "#{key}=#{configFromApp[key]}"
-				else
-					configStatement = configStatements[index]
-				return configStatement
-			# Here's the dangerous part:
-			execAsync("mount -t vfat -o remount,rw #{bootBlockDevice} #{bootMountPoint}")
-			.then ->
-				fs.writeFileAsync(bootConfigPath + '.new', outputConfig.join('\n'))
-			.then ->
-				fs.renameAsync(bootConfigPath + '.new', bootConfigPath)
-			.then ->
-				execAsync('sync')
-			.then ->
-				rebootDevice()
-	.catch (err) ->
-		console.log('Will not set boot config: ', err)
+# exports.setBootConfig = (env) ->
+# 	device.getDeviceType()
+# 	.then (deviceType) ->
+# 		throw new Error('This is not a Raspberry Pi') if !_.startsWith(deviceType, 'raspberry-pi')
+# 		Promise.join parseBootConfigFromEnv(env), fs.readFileAsync(bootConfigPath, 'utf8'), (configFromApp, configTxt ) ->
+# 			throw new Error('No boot config to change') if _.isEmpty(configFromApp)
+# 			configFromFS = {}
+# 			configPositions = []
+# 			configStatements = configTxt.split(/\r?\n/)
+# 			_.each configStatements, (configStr) ->
+# 				keyValue = /^([^#=]+)=(.+)/.exec(configStr)
+# 				if keyValue?
+# 					configPositions.push(keyValue[1])
+# 					configFromFS[keyValue[1]] = keyValue[2]
+# 				else
+# 					# This will ensure config.txt filters are in order
+# 					configPositions.push(configStr)
+# 			# configFromApp and configFromFS now have compatible formats
+# 			keysFromApp = _.keys(configFromApp)
+# 			keysFromFS = _.keys(configFromFS)
+# 			toBeAdded = _.difference(keysFromApp, keysFromFS)
+# 			toBeChanged = _.intersection(keysFromApp, keysFromFS)
+# 			toBeChanged = _.filter toBeChanged, (key) ->
+# 				configFromApp[key] != configFromFS[key]
+# 			throw new Error('Nothing to change') if _.isEmpty(toBeChanged) and _.isEmpty(toBeAdded)
+# 			# We add the keys to be added first so they are out of any filters
+# 			outputConfig = _.map toBeAdded, (key) -> "#{key}=#{configFromApp[key]}"
+# 			outputConfig = outputConfig.concat _.map configPositions, (key, index) ->
+# 				configStatement = null
+# 				if _.includes(toBeChanged, key)
+# 					configStatement = "#{key}=#{configFromApp[key]}"
+# 				else
+# 					configStatement = configStatements[index]
+# 				return configStatement
+# 			# Here's the dangerous part:
+# 			execAsync("mount -t vfat -o remount,rw #{bootBlockDevice} #{bootMountPoint}")
+# 			.then ->
+# 				fs.writeFileAsync(bootConfigPath + '.new', outputConfig.join('\n'))
+# 			.then ->
+# 				fs.renameAsync(bootConfigPath + '.new', bootConfigPath)
+# 			.then ->
+# 				execAsync('sync')
+# 			.then ->
+# 				rebootDevice()
+# 	.catch (err) ->
+# 		console.log('Will not set boot config: ', err)
 
-exports.getDeviceType = do ->
-	deviceTypePromise = null
-	return ->
-		deviceTypePromise ?= Promise.rejected()
-		deviceTypePromise = deviceTypePromise.catch ->
-			fs.readFileAsync(configPath, 'utf8')
-			.then(JSON.parse)
-			.then (configFromFile) ->
-				if !configFromFile.deviceType?
-					throw new Error('Device type not specified in config file')
-				return configFromFile.deviceType
+exports.getDeviceType = ->
+	return config.multivisor.deviceType
 
 # Calling this function updates the local device state, which is then used to synchronise
 # the remote device state, repeating any failed updates until successfully synchronised.
 # This function will also optimise updates by merging multiple updates and only sending the latest state.
 exports.updateState = do ->
-	applyPromise = Promise.resolve()
+	applyPromise = {}
 	targetState = {}
 	actualState = {}
+	_.map config.multivisor.apps, (app) ->
+		applyPromise[app.appId] = Promise.resolve()
+		targetState[app.appId] = {}
+		actualState[app.appId] = {}
 
-	getStateDiff = ->
-		_.omit targetState, (value, key) ->
-			actualState[key] is value
+	getStateDiff = (appId) ->
+		_.omit targetState[appId], (value, key) ->
+			actualState[appId][key] is value
 
-	applyState = ->
-		stateDiff = getStateDiff()
+	applyState = (appId) ->
+		stateDiff = getStateDiff(appId)
 		if _.size(stateDiff) is 0
 			return
-		applyPromise = Promise.join(
+		applyPromise[appId] = Promise.join(
 			knex('config').select('value').where(key: 'apiKey')
-			device.getID()
+			device.getID(appId)
 			([{value: apiKey}], deviceID) ->
-				stateDiff = getStateDiff()
+				stateDiff = getStateDiff(appId)
 				if _.size(stateDiff) is 0 || !apiKey?
 					return
 				resinApi.patch
@@ -159,7 +157,7 @@ exports.updateState = do ->
 						apikey: apiKey
 				.then ->
 					# Update the actual state.
-					_.merge(actualState, stateDiff)
+					_.merge(actualState[appId], stateDiff)
 		)
 		.catch (error) ->
 			utils.mixpanelTrack('Device info update failure', {error, stateDiff})
@@ -167,13 +165,13 @@ exports.updateState = do ->
 			Promise.delay(5000)
 		.finally ->
 			# Check if any more state diffs have appeared whilst we've been processing this update.
-			applyState()
+			applyState(appId)
 
-	return (updatedState = {}, retry = false) ->
+	return (appId, updatedState = {}, retry = false) ->
 		# Remove any updates that match the last we successfully sent.
-		_.merge(targetState, updatedState)
+		_.merge(targetState[appId], updatedState)
 
 		# Only trigger applying state if an apply isn't already in progress.
-		if !applyPromise.isPending()
-			applyState()
+		if !applyPromise[appId].isPending()
+			applyState(appId)
 		return
