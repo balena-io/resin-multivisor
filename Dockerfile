@@ -12,6 +12,7 @@ RUN apk-install \
 	make \
 	nodejs \
 	socat \
+	sqlite \
 	sqlite-dev \
 	supervisor
 
