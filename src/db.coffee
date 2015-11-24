@@ -32,6 +32,7 @@ knex.init = Promise.all([
 				t.string('commit')
 				t.string('imageId')
 				t.string('appId')
+				t.string('uuid')
 				t.boolean('privileged')
 				t.json('env')
 		else
