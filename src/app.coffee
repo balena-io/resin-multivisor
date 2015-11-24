@@ -21,41 +21,42 @@ knex.init.then ->
 		channelsByAppId = _.indexBy(logsChannels, appId)
 		return _.mapValues channelsByAppId, (logsChannelObject) -> logsChannelObject.logsChannel
 
-	Promise.join bootstrap.startBootstrapping(), utils.getOrGenerateSecret('api'), logsChannels, (uuids, secret, logsChannels) ->
-		# Persist the uuid in subsequent metrics
+	bootstrap.startBootstrapping().then ->
+		Promise.join utils.getOrGenerateSecret('api'), logsChannels, (secret, logsChannels) ->
+			# Persist the uuid in subsequent metrics
 
-		api = require './api'
-		application = require('./application')(logsChannels)
-		device = require './device'
+			api = require './api'
+			application = require('./application')(logsChannels)
+			device = require './device'
 
-		bootstrap.done
-		.then ->
-			console.log('Starting API server..')
-			api(application).listen(config.listenPort)
-			# Let API know what version we are, and our api connection info.
-			console.log('Updating supervisor version and api info')
-			_.map config.multivisor.apps, (app) ->
-				device.updateState app.appId, {
-					api_port: config.listenPort
-					api_secret: secret
-					supervisor_version: utils.supervisorVersion
-					provisioning_progress: null
-					provisioning_state: ''
-					download_progress: null
-					logs_channel: logsChannels[app.appId]
-				}
+			bootstrap.done
+			.then ->
+				console.log('Starting API server..')
+				api(application).listen(config.listenPort)
+				# Let API know what version we are, and our api connection info.
+				console.log('Updating supervisor version and api info')
+				_.map config.multivisor.apps, (app) ->
+					device.updateState app.appId, {
+						api_port: config.listenPort
+						api_secret: secret
+						supervisor_version: utils.supervisorVersion
+						provisioning_progress: null
+						provisioning_state: ''
+						download_progress: null
+						logs_channel: logsChannels[app.appId]
+					}
 
-		console.log('Starting Apps..')
-		application.initialize()
+			console.log('Starting Apps..')
+			application.initialize()
 
-		#updateIpAddr = ->
-		#	callback = (error, response, body ) ->
-		#		if !error && response.statusCode == 200 && body.Data.IPAddresses?
-		#			device.updateState(
-		#				ip_address: body.Data.IPAddresses.join(' ')
-		#			)
-		#	request.get({ url: "#{config.gosuperAddress}/v1/ipaddr", json: true }, callback )
+			#updateIpAddr = ->
+			#	callback = (error, response, body ) ->
+			#		if !error && response.statusCode == 200 && body.Data.IPAddresses?
+			#			device.updateState(
+			#				ip_address: body.Data.IPAddresses.join(' ')
+			#			)
+			#	request.get({ url: "#{config.gosuperAddress}/v1/ipaddr", json: true }, callback )
 
-		#console.log('Starting periodic check for IP addresses..')
-		#setInterval(updateIpAddr, 30 * 1000) # Every 30s
-		#updateIpAddr()
+			#console.log('Starting periodic check for IP addresses..')
+			#setInterval(updateIpAddr, 30 * 1000) # Every 30s
+			#updateIpAddr()
