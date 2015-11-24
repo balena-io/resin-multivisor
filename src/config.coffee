@@ -1,3 +1,5 @@
+_ = require 'lodash'
+
 checkInt = (s) ->
 	# Make sure `s` exists and is not an empty string.
 	if !s
@@ -35,3 +37,22 @@ module.exports = config =
 		logsChannel: process.env.RESIN_SUPERVISOR_LOGS_CHANNEL ? null
 	vpnStatusPath: process.env.VPN_STATUS_PATH ? '/mnt/root/run/openvpn/vpn_status'
 	checkInt: checkInt
+
+appIds = process.env.MULTIVISOR_APP_IDS.split(',')
+isPreloaded = process.env.MULTIVISOR_PRELOADED_APPS == '1'
+if isPreloaded
+	commits = process.env.MULTIVISOR_PRELOADED_COMMITS.split(',')
+	imageIds = process.env.MULTIVISOR_PRELOADED_IMAGE_IDS.split(',')
+	envs = process.env.MULTIVISOR_PRELOADED_ENVS.split(',')
+
+module.exports.multivisor = {
+	isPreloaded
+	deviceType: process.env.MULTIVISOR_DEVICE_TYPE
+	apps: _.map appIds, (appId, ind) ->
+		app = { appId }
+		if isPreloaded
+			app.commit = commits[ind]
+			app.imageId = imageIds[ind]
+			app.env = envs[ind]
+		return app
+}
