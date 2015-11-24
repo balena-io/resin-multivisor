@@ -12,7 +12,6 @@ RUN apk-install \
 	make \
 	nodejs \
 	socat \
-	sqlite \
 	sqlite-dev \
 	supervisor
 
@@ -25,7 +24,8 @@ COPY package.json postinstall.sh /app/
 RUN JOBS=MAX npm install --unsafe-perm --production --no-optional \
 	&& npm dedupe \
 	&& npm cache clean \
-	&& rm -rf /tmp/*
+	&& rm -rf /tmp/* \
+	&& cd /app/node_modules/sqlite3 && ./node_modules/.bin/node-pre-gyp install --build-from-source --sqlite=/usr/lib
 
 # Copy source
 COPY . /app/
