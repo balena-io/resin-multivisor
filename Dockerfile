@@ -3,6 +3,7 @@ FROM gliderlabs/alpine
 RUN apk-install \
 	binutils \
 	ca-certificates \
+	device-mapper \
 	docker \
 	e2fsprogs \
 	g++ \
