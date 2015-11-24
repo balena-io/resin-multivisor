@@ -18,8 +18,11 @@ mount -t tmpfs -o size=1m tmpfs /var/run/resin
 
 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
 
-supervisorctl start resin-supervisor
+supervisorctl -c /etc/supervisor/supervisord.conf start resin-supervisor
 
 tail -f /var/log/supervisor/supervisord.log &
-tail -f /var/log/resin_supervisor_stderr.log &
+
+while [ ! -f /var/log/resin_supervisor_stdout.log ]; do
+	sleep 1
+done
 tail -f /var/log/resin_supervisor_stdout.log
