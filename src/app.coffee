@@ -9,17 +9,23 @@ config = require './config'
 request = require 'request'
 
 knex.init.then ->
+	utils.mixpanelProperties.uuid = process.env.RESIN_DEVICE_UUID
 	utils.mixpanelTrack('Multivisor start')
 
 	#console.log('Starting connectivity check..')
 	#utils.connectivityCheck()
 
-	Promise.join bootstrap.startBootstrapping(), utils.getOrGenerateSecret('api'), utils.getOrGenerateSecret('logsChannel'), (uuid, secret, logsChannel) ->
+	logsChannels = Promise.map(config.multivisor.apps, (app) ->
+		return { appId: app.appId, logsChannel: utils.getOrGenerateSecret("logsChannel#{app.appId}") }
+	).then (logsChannels) ->
+		channelsByAppId = _.indexBy(logsChannels, appId)
+		return _.mapValues channelsByAppId, (logsChannelObject) -> logsChannelObject.logsChannel
+
+	Promise.join bootstrap.startBootstrapping(), utils.getOrGenerateSecret('api'), logsChannels, (uuids, secret, logsChannels) ->
 		# Persist the uuid in subsequent metrics
-		utils.mixpanelProperties.uuid = uuid
 
 		api = require './api'
-		application = require('./application')(logsChannel)
+		application = require('./application')(logsChannels)
 		device = require './device'
 
 		bootstrap.done
@@ -36,7 +42,7 @@ knex.init.then ->
 					provisioning_progress: null
 					provisioning_state: ''
 					download_progress: null
-					logs_channel: logsChannel
+					logs_channel: logsChannels[app.appId]
 				}
 
 		console.log('Starting Apps..')

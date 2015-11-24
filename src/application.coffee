@@ -8,7 +8,7 @@ dockerUtils = require './docker-utils'
 Promise = require 'bluebird'
 utils = require './utils'
 tty = require './lib/tty'
-logger = require './lib/logger'
+Logger = require './lib/logger'
 { cachedResinApi } = require './request'
 device = require './device'
 lockFile = Promise.promisifyAll(require('lockfile'))
@@ -80,7 +80,7 @@ logSystemEvent = (logType, app, error) ->
 		if _.isEmpty(errMessage)
 			errMessage = 'Unknown cause'
 		message += " due to '#{errMessage}'"
-	logger.log({ message, isSystem: true })
+	loggers[app.appId].log({ message, isSystem: true })
 	utils.mixpanelTrack(logType.eventName, {app, error})
 	return
 
@@ -230,7 +230,7 @@ application.start = start = (app) ->
 				throw err
 			.then ->
 				device.updateState(app.appId, commit: app.commit)
-				logger.attach(app)
+				loggers[app.appId].attach(app)
 	.tap ->
 		logSystemEvent(logTypes.startAppSuccess, app)
 	.finally ->
@@ -607,10 +607,13 @@ application.initialize = ->
 		application.poll()
 		application.update()
 
-module.exports = (logsChannel) ->
-	logger.init(
+application.loggers = loggers = {}
+
+module.exports = (logsChannels) ->
+	Logger.init(
 		dockerSocket: config.dockerSocket
 		pubnub: config.pubnub
-		channel: "device-#{logsChannel}-logs"
 	)
+	_.map config.multivisor.app, (app) ->
+		application.loggers[app.appId] = Logger.new("device-#{logsChannels[app.appId]}-logs")
 	return application
