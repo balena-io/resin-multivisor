@@ -25,4 +25,4 @@ tail -f /var/log/supervisor/supervisord.log &
 while [ ! -f /var/log/resin_supervisor_stdout.log ]; do
 	sleep 1
 done
-tail -f /var/log/resin_supervisor_stdout.log
+tail -fn 1000 /var/log/resin_supervisor_stdout.log
