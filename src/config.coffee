@@ -43,10 +43,11 @@ isPreloaded = process.env.MULTIVISOR_PRELOADED_APPS == '1'
 if isPreloaded
 	commits = process.env.MULTIVISOR_PRELOADED_COMMITS.split(',')
 	imageIds = process.env.MULTIVISOR_PRELOADED_IMAGE_IDS.split(',')
-	envs = process.env.MULTIVISOR_PRELOADED_ENVS.split(',')
+	envs = JSON.parse(process.env.MULTIVISOR_PRELOADED_ENVS)
 
 module.exports.multivisor = {
 	isPreloaded
+	apiKey: process.env.MULTIVISOR_API_KEY
 	deviceType: process.env.MULTIVISOR_DEVICE_TYPE
 	apps: _.map appIds, (appId, ind) ->
 		app = { appId }

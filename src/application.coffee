@@ -498,6 +498,7 @@ application.update = update = (force) ->
 	updateStatus.state = UPDATE_UPDATING
 	bootstrap.done.then ->
 		Promise.join getConfig('apiKey'), knex('app').select(), (apiKey, apps) ->
+			apps = _.reject apps, (app) -> !app.imageId?
 			deviceIds = Promise.map config.multivisor.apps, (app) ->
 				device.getID(app.appId)
 			uuids = Promise.map config.multivisor.apps, (app) ->

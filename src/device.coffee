@@ -5,7 +5,6 @@ utils = require './utils'
 { resinApi } = require './request'
 device = exports
 config = require './config'
-configPath = '/boot/config.json'
 request = Promise.promisifyAll(require('request'))
 execAsync = Promise.promisify(require('child_process').exec)
 fs = Promise.promisifyAll(require('fs'))
