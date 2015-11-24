@@ -7,7 +7,6 @@ config = require './config'
 dockerUtils = require './docker-utils'
 Promise = require 'bluebird'
 utils = require './utils'
-tty = require './lib/tty'
 Logger = require './lib/logger'
 { cachedResinApi } = require './request'
 device = require './device'
@@ -90,12 +89,7 @@ application.kill = kill = (app, updateDB = true) ->
 	logSystemEvent(logTypes.stopApp, app)
 	device.updateState(app.appId, status: 'Stopping')
 	container = docker.getContainer(app.containerId)
-	tty.stop(app)
-	.catch (err) ->
-		console.error('Error stopping tty', err)
-		return # Even if stopping the tty fails we want to finish stopping the container
-	.then ->
-		container.stopAsync(t: 10)
+	container.stopAsync(t: 10)
 	.then ->
 		container.removeAsync()
 	# Bluebird throws OperationalError for errors resulting in the normal execution of a promisified function.
@@ -310,8 +304,6 @@ specialActionEnvVars =
 	'RESIN_SUPERVISOR_UPDATE_STRATEGY': null
 	'RESIN_SUPERVISOR_HANDOVER_TIMEOUT': null
 	'RESIN_SUPERVISOR_OVERRIDE_LOCK': null
-	'RESIN_SUPERVISOR_VPN_CONTROL': utils.vpnControl
-	'RESIN_SUPERVISOR_CONNECTIVITY_CHECK': utils.connectivityCheck
 	'RESIN_SUPERVISOR_POLL_INTERVAL': apiPollInterval
 	'RESIN_SUPERVISOR_LOG_CONTROL': utils.resinLogControl
 

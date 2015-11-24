@@ -1,7 +1,7 @@
 Promise = require 'bluebird'
 fs = Promise.promisifyAll require 'fs'
 utils = require './utils'
-tty = require './lib/tty'
+#tty = require './lib/tty'
 knex = require './db'
 express = require 'express'
 bodyParser = require 'body-parser'

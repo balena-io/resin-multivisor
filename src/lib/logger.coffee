@@ -16,16 +16,17 @@ dockerPromise = initialised.then (config) ->
 	Promise.promisifyAll(docker.getContainer().constructor.prototype)
 	return docker
 
+disableLogs = false
+exports.disableLogPublishing: (disable) ->
+				disableLogs = disable
+
 exports.new = do ->
 	publishQueues = {}
-	disableLogs = {}
 	loggers = {}
 	return (channel) ->
 		disableLogs[channel] = false
 
 		loggers[channel] = {
-			disableLogPublishing: (disable) ->
-				disableLogs[channel] = disable
 			log: ->
 				loggers[channel].publish(arguments...)
 
@@ -36,7 +37,7 @@ exports.new = do ->
 					# Redefine original function
 					loggers[channel].publish = (message) ->
 						# Disable sending logs for bandwidth control
-						return if disableLogs[channel]
+						return if disableLogs
 						if _.isString(message)
 							message = { message }
 

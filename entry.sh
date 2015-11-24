@@ -8,6 +8,7 @@ set -e
     mknod /dev/net/tun c 10 200
 
 cd /app
+./wrapdocker
 
 DATA_DIRECTORY=/data
 if [ -d "$DATA_DIRECTORY" ]; then
@@ -19,14 +20,10 @@ mkdir -p /var/log/supervisor && touch /var/log/supervisor/supervisord.log
 mkdir -p /var/run/resin
 mount -t tmpfs -o size=1m tmpfs /var/run/resin
 
-if [ -z "$GOSUPER_SOCKET" ]; then
-	export GOSUPER_SOCKET=/var/run/resin/gosuper.sock
-fi
-export DBUS_SYSTEM_BUS_ADDRESS="unix:path=/mnt/root/run/dbus/system_bus_socket"
-
 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
 
 supervisorctl start resin-supervisor
-supervisorctl start go-supervisor
 
-tail -f /var/log/supervisor/supervisord.log
+tail -f /var/log/supervisor/supervisord.log &
+tail -f /var/log/resin_supervisor_stderr.log &
+tail -f /var/log/resin_supervisor_stdout.log
