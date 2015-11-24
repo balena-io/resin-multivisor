@@ -56,7 +56,9 @@ bootstrapOrRetry = (app) ->
 	utils.mixpanelTrack('Device bootstrap', { app })
 	bootstrap(app).catch (err) ->
 		utils.mixpanelTrack('Device bootstrap failed, retrying', { app, error: err, delay: config.bootstrapRetryDelay })
-		setTimeout( -> bootstrapOrRetry(app), config.bootstrapRetryDelay)
+		setTimeout ->
+			bootstrapOrRetry(app)
+		, config.bootstrapRetryDelay
 
 bootstrapper.doneBootstrapping = {}
 bootstrapper.done = Promise.map(config.multivisor.apps, (app) ->

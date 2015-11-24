@@ -17,7 +17,7 @@ dockerPromise = initialised.then (config) ->
 	return docker
 
 disableLogs = false
-exports.disableLogPublishing: (disable) ->
+exports.disableLogPublishing = (disable) ->
 				disableLogs = disable
 
 exports.new = do ->
