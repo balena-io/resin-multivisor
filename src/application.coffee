@@ -325,10 +325,10 @@ executeSpecialActionsAndBootConfig = (env) ->
 				if !_.has(executedSpecialActionEnvVars, key) or executedSpecialActionEnvVars[key] != env[key]
 					specialActionCallback(env[key])
 					executedSpecialActionEnvVars[key] = env[key]
-		bootConfigVars = _.pick env, (val, key) ->
-			return _.startsWith(key, device.bootConfigEnvVarPrefix)
-		if !_.isEmpty(bootConfigVars)
-			device.setBootConfig(bootConfigVars)
+		#bootConfigVars = _.pick env, (val, key) ->
+		#	return _.startsWith(key, device.bootConfigEnvVarPrefix)
+		#if !_.isEmpty(bootConfigVars)
+		#	device.setBootConfig(bootConfigVars)
 
 wrapAsError = (err) ->
 	return err if _.isError(err)
@@ -419,7 +419,7 @@ updateUsingStrategy = (strategy, options) ->
 		strategy = 'download-then-kill'
 	updateStrategies[strategy](options)
 
-getRemoteApps = (uuid, apiKey) ->
+getRemoteApps = (apiKey) ->
 	cachedResinApi.get
 		resource: 'application'
 		options:
@@ -430,17 +430,16 @@ getRemoteApps = (uuid, apiKey) ->
 			]
 			filter:
 				commit: $ne: null
-				device:
-					uuid: uuid
+				id: _.map(config.multivisor.apps, (app) -> app.appId)
 		customOptions:
 			apikey: apiKey
 
-getEnvAndFormatRemoteApps = (deviceId, remoteApps, uuid, apiKey) ->
+getEnvAndFormatRemoteApps = (deviceIds, remoteApps, uuids, apiKey) ->
 	Promise.map remoteApps, (app) ->
-		getEnvironment(app.id, deviceId, apiKey)
+		getEnvironment(app.id, deviceId[app.id], apiKey)
 		.then (environment) ->
 			app.environment_variable = environment
-			utils.extendEnvVars(app.environment_variable, uuid)
+			utils.extendEnvVars(app.environment_variable, uuids[app.id])
 		.then (fullEnv) ->
 			env = _.omit(fullEnv, _.keys(specialActionEnvVars))
 			return [
@@ -498,11 +497,14 @@ application.update = update = (force) ->
 		return
 	updateStatus.state = UPDATE_UPDATING
 	bootstrap.done.then ->
-		Promise.join getConfig('apiKey'), getConfig('uuid'), knex('app').select(), (apiKey, uuid, apps) ->
-			deviceId = device.getID()
-			remoteApps = getRemoteApps(uuid, apiKey)
+		Promise.join getConfig('apiKey'), knex('app').select(), (apiKey, apps) ->
+			deviceIds = Promise.map config.multivisor.apps, (app) ->
+				device.getID(app.appId)
+			uuids = Promise.map config.multivisor.apps, (app) ->
+				device.getUUID(app.appId)
+			remoteApps = getRemoteApps(apiKey)
 
-			Promise.join deviceId, remoteApps, uuid, apiKey, getEnvAndFormatRemoteApps
+			Promise.join deviceIds, remoteApps, uuids, apiKey, getEnvAndFormatRemoteApps
 			.then ([ remoteAppEnvs, remoteApps ]) ->
 				{ localApps, localAppEnvs } = formatLocalApps(apps)
 				resourcesForUpdate = compareForUpdate(localApps, remoteApps, localAppEnvs, remoteAppEnvs)
