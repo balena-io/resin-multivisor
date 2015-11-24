@@ -9,6 +9,7 @@ RUN apk-install \
 	iptables \
 	lxc \
 	make \
+	nodejs \
 	socat \
 	sqlite-dev \
 	supervisor
