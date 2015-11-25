@@ -413,22 +413,25 @@ updateUsingStrategy = (strategy, options) ->
 	updateStrategies[strategy](options)
 
 getRemoteApps = (apiKey) ->
-	appIds = _.map(config.multivisor.apps, (app) -> app.appId)
-	if appIds.length == 1
-		appIds = appIds[0]
-	cachedResinApi.get
-		resource: 'application'
-		options:
-			select: [
-				'id'
-				'git_repository'
-				'commit'
-			]
-			filter:
-				commit: $ne: null
-				id: appIds
-		customOptions:
-			apikey: apiKey
+	Promise.map config.multivisor.apps, (app) ->
+		device.getUUID(app.appId)
+		.then (uuid) ->
+			cachedResinApi.get
+				resource: 'application'
+				options:
+					select: [
+						'id'
+						'git_repository'
+						'commit'
+					]
+					filter:
+						commit: $ne: null
+						device:
+							uuid: uuid
+				customOptions:
+					apikey: apiKey
+	.then(_.flatten)
+
 
 getEnvAndFormatRemoteApps = (deviceIds, remoteApps, uuids, apiKey) ->
 	deviceIds = _.mapValues _.indexBy(deviceIds, 'appId'), (d) ->
