@@ -7,6 +7,7 @@ deviceRegister = require 'resin-register-device'
 
 config = require './config'
 device = require './device'
+vpn = require './vpn/vpn-connect'
 
 DuplicateUuidError = (err) ->
 	return err.message == '"uuid" must be unique.'
@@ -24,6 +25,8 @@ bootstrap = (app) ->
 	Promise.try ->
 		deviceRegister.register(resinApi, userConfig)
 		.catch DuplicateUuidError, ->
+	.then ->
+		vpn.createConnection(app.uuid, config.multivisor.apiKey, config.vpnEndpoint)
 	.then ->
 		bootstrapper.doneBootstrapping[app.appId]()
 

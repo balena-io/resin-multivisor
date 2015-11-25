@@ -8,6 +8,7 @@ bootstrap = require './bootstrap'
 config = require './config'
 request = require 'request'
 _ = require 'lodash'
+vpn = require './vpn/vpn-connect'
 
 knex.init.then ->
 	utils.mixpanelProperties.uuid = process.env.RESIN_DEVICE_UUID
@@ -37,8 +38,13 @@ knex.init.then ->
 				console.log('Starting API server..')
 				api(application).listen(config.listenPort)
 				# Let API know what version we are, and our api connection info.
-				console.log('Updating supervisor version and api info')
+				console.log('Updating supervisor version and api info, and connecting to VPN')
 				_.map config.multivisor.apps, (app) ->
+
+					device.getUUID(app.appId)
+					.then (uuid) ->
+						vpn.startConnection(uuid)
+
 					device.updateState app.appId, {
 						api_port: config.listenPort
 						api_secret: secret

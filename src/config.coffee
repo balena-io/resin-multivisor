@@ -37,6 +37,7 @@ module.exports = config =
 		logsChannel: process.env.RESIN_SUPERVISOR_LOGS_CHANNEL ? null
 	vpnStatusPath: process.env.VPN_STATUS_PATH ? '/mnt/root/run/openvpn/vpn_status'
 	checkInt: checkInt
+	vpnEndpoint: process.env.VPN_ENDPOINT
 
 appIds = process.env.MULTIVISOR_APP_IDS.split(',')
 isPreloaded = process.env.MULTIVISOR_PRELOADED_APPS == '1'

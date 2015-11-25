@@ -1,0 +1,19 @@
+client
+remote ${ endpoint } 443
+resolv-retry infinite
+
+remote-cert-tls server
+ca /etc/openvpn/ca.crt
+auth-user-pass ${ authfile }
+auth-retry nointeract
+script-security 2
+up-restart
+
+comp-lzo
+dev tun
+proto tcp
+nobind
+
+persist-key
+persist-tun
+verb 3

@@ -7,6 +7,9 @@ set -e
 [ -c /dev/net/tun ] ||
     mknod /dev/net/tun c 10 200
 
+mkdir -p /data/vpn
+mkdir -p /var/run/openvpn
+
 cd /app
 ./wrapdocker
 

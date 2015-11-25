@@ -11,12 +11,14 @@ RUN apk-install \
 	lxc \
 	make \
 	nodejs \
+	openvpn \
 	socat \
 	sqlite-dev \
 	supervisor
 
 # Copy supervisord configuration files
 COPY config/supervisor/ /etc/supervisor/
+COPY config/openvpn/ /etc/openvpn/
 
 # Install dependencies
 WORKDIR /app
