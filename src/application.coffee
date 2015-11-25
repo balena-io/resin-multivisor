@@ -413,6 +413,9 @@ updateUsingStrategy = (strategy, options) ->
 	updateStrategies[strategy](options)
 
 getRemoteApps = (apiKey) ->
+	appIds = _.map(config.multivisor.apps, (app) -> app.appId)
+	if appIds.length == 1
+		appIds = appIds[0]
 	cachedResinApi.get
 		resource: 'application'
 		options:
@@ -423,13 +426,13 @@ getRemoteApps = (apiKey) ->
 			]
 			filter:
 				commit: $ne: null
-				id: _.map(config.multivisor.apps, (app) -> app.appId)
+				id: appIds
 		customOptions:
 			apikey: apiKey
 
 getEnvAndFormatRemoteApps = (deviceIds, remoteApps, uuids, apiKey) ->
 	Promise.map remoteApps, (app) ->
-		getEnvironment(app.id, deviceId[app.id], apiKey)
+		getEnvironment(app.id, deviceIds[app.id], apiKey)
 		.then (environment) ->
 			app.environment_variable = environment
 			utils.extendEnvVars(app.environment_variable, uuids[app.id])
@@ -581,7 +584,8 @@ application.update = update = (force) ->
 			console.log('Scheduling another update attempt due to failure: ', delayTime, err)
 			setTimeout(update, delayTime, force)
 		.finally ->
-			device.updateState(app.appId, status: 'Idle')
+			_.map config.multivisor.apps, (app) ->
+				device.updateState(app.appId, status: 'Idle')
 			if updateStatus.state is UPDATE_REQUIRED
 				# If an update is required then schedule it
 				setTimeout(update, 1, updateStatus.forceNext)
