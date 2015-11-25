@@ -431,6 +431,8 @@ getRemoteApps = (apiKey) ->
 			apikey: apiKey
 
 getEnvAndFormatRemoteApps = (deviceIds, remoteApps, uuids, apiKey) ->
+	deviceIds = _.mapValues _.indexBy(deviceIds, 'appId'), (d) ->
+		return d.deviceId
 	Promise.map remoteApps, (app) ->
 		getEnvironment(app.id, deviceIds[app.id], apiKey)
 		.then (environment) ->
@@ -499,6 +501,8 @@ application.update = update = (force) ->
 			apps = _.reject apps, (app) -> !app.imageId?
 			deviceIds = Promise.map config.multivisor.apps, (app) ->
 				device.getID(app.appId)
+				.then (deviceId) ->
+					return { appId: app.appId, deviceId }
 			uuids = Promise.map config.multivisor.apps, (app) ->
 				device.getUUID(app.appId)
 			remoteApps = getRemoteApps(apiKey)
