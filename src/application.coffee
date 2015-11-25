@@ -138,17 +138,11 @@ application.start = start = (app) ->
 	return if !app.imageId?
 	volumes =
 		'/data': {}
-		'/lib/modules': {}
-		'/lib/firmware': {}
-		'/run/dbus': {}
 	binds = [
 		'/resin-data/' + app.appId + ':/data'
-		'/lib/modules:/lib/modules'
-		'/lib/firmware:/lib/firmware'
-		'/run/dbus:/run/dbus'
-		'/run/dbus:/host_run/dbus'
-		'/etc/resolv.conf:/etc/resolv.conf:rw'
 	]
+	netMode = 'bridge'
+	privileged = false
 	Promise.try ->
 		# Parse the env vars before trying to access them, that's because they have to be stringified for knex..
 		JSON.parse(app.env)
@@ -158,6 +152,13 @@ application.start = start = (app) ->
 			.split(',')
 			.map((port) -> port.trim())
 			.filter(isValidPort)
+
+		if env.MULTIVISOR_BINDS?
+			binds = _.union(binds, env.MULTIVISOR_BINDS.split(','))
+		if env.MULTIVISOR_NETWORK_MODE?
+			netMode = env.MULTIVISOR_NETWORK_MODE
+		if env.MULTIVISOR_PRIVILEGED == '1'
+			privileged = true
 
 		if app.containerId?
 			# If we have a container id then check it exists and if so use it.
@@ -211,8 +212,8 @@ application.start = start = (app) ->
 				portList.forEach (port) ->
 					ports[port + '/tcp'] = [ HostPort: port ]
 			container.startAsync(
-				Privileged: true
-				NetworkMode: 'host'
+				Privileged: privileged
+				NetworkMode: netMode
 				PortBindings: ports
 				Binds: binds
 			)
