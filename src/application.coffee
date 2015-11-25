@@ -79,7 +79,7 @@ logSystemEvent = (logType, app, error) ->
 		if _.isEmpty(errMessage)
 			errMessage = 'Unknown cause'
 		message += " due to '#{errMessage}'"
-	loggers[app.appId].log({ message, isSystem: true })
+	application.loggers[app.appId].log({ message, isSystem: true })
 	utils.mixpanelTrack(logType.eventName, {app, error})
 	return
 
@@ -225,7 +225,7 @@ application.start = start = (app) ->
 				throw err
 			.then ->
 				device.updateState(app.appId, commit: app.commit)
-				loggers[app.appId].attach(app)
+				application.loggers[app.appId].attach(app)
 	.tap ->
 		logSystemEvent(logTypes.startAppSuccess, app)
 	.finally ->
@@ -612,13 +612,13 @@ application.initialize = ->
 		application.poll()
 		application.update()
 
-application.loggers = loggers = {}
+application.loggers = {}
 
 module.exports = (logsChannels) ->
 	Logger.init(
 		dockerSocket: config.dockerSocket
 		pubnub: config.pubnub
 	)
-	_.map config.multivisor.app, (app) ->
+	_.map config.multivisor.apps, (app) ->
 		application.loggers[app.appId] = Logger.new("device-#{logsChannels[app.appId]}-logs")
 	return application

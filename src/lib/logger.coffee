@@ -6,7 +6,7 @@ es = require 'event-stream'
 
 initialised = new Promise (resolve) ->
 	exports.init = (config) ->
-		pubnub = PUBNUB.init(config.pubnub)
+		exports.pubnub = PUBNUB.init(config.pubnub)
 		resolve(config)
 
 dockerPromise = initialised.then (config) ->
@@ -46,7 +46,7 @@ exports.new = do ->
 							# Stop pubnub logging loads of "Missing Message" errors, as they are quite distracting
 							message: ' '
 
-						pubnub.publish({ channel, message })
+						exports.pubnub.publish({ channel, message })
 
 					# Replay queue now that we have initialised the publish function
 					publish(args...) for args in publishQueues[channel]
