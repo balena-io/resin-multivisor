@@ -10,7 +10,7 @@ execAsync = Promise.promisify(require('child_process').exec)
 fs = Promise.promisifyAll(require('fs'))
 
 exports.getUUID = getUUID = (appId) ->
-	knex('apps').select('uuid').where({ appId }).get(0).get('uuid')
+	knex('app').select('uuid').where({ appId }).get(0).get('uuid')
 
 exports.getID = do ->
 	deviceIdPromises = {}
