@@ -11,8 +11,8 @@ fs = Promise.promisifyAll(require('fs'))
 
 exports.getUUID = getUUID = (appId) ->
 	knex('app').select('uuid').where({ appId })
-	.tap(console.log)
-	.get(0).get('uuid')
+	.then ([ app ]) ->
+		return app.uuid
 
 exports.getID = do ->
 	deviceIdPromises = {}

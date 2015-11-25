@@ -17,7 +17,9 @@ knex.init.then ->
 	#utils.connectivityCheck()
 
 	logsChannels = Promise.map(config.multivisor.apps, (app) ->
-		return { appId: app.appId, logsChannel: utils.getOrGenerateSecret("logsChannel#{app.appId}") }
+		utils.getOrGenerateSecret("logsChannel#{app.appId}")
+		.then (channel) ->
+			return { appId: app.appId, logsChannel: channel }
 	).then (logsChannels) ->
 		channelsByAppId = _.indexBy(logsChannels, 'appId')
 		return _.mapValues channelsByAppId, (logsChannelObject) -> logsChannelObject.logsChannel
