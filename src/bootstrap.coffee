@@ -86,7 +86,8 @@ bootstrapper.startBootstrapping = ->
 	knex('config').select('value').where(key: 'bootstrapped')
 	.then ([ bootstrapped ]) ->
 		if bootstrapped?.value == '1'
-			bootstrapper.doneBootstrapping()
+			bootstrapper.bootstrapped = true
+			bootstrapper.done = Promise.resolve()
 			return
 		console.log('New device detected. Bootstrapping..')
 		generateUUIDsAndLoadPreloadedApps()
