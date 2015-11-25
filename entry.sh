@@ -9,6 +9,8 @@ set -e
 
 mkdir -p /data/vpn
 mkdir -p /var/run/openvpn
+mkdir -p /data/docker
+ln -s /data/docker /var/lib/docker
 
 cd /app
 ./wrapdocker
