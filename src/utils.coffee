@@ -17,7 +17,7 @@ exports.supervisorVersion = require('../package.json').version
 mixpanelClient = mixpanel.init(config.mixpanelToken)
 
 exports.mixpanelProperties = mixpanelProperties =
-	username: require('/boot/config.json').username
+	username: config.multivisor.username
 
 exports.mixpanelTrack = (event, properties = {}) ->
 	# Allow passing in an error directly and having it assigned to the error property.

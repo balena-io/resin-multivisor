@@ -49,6 +49,7 @@ module.exports.multivisor = {
 	isPreloaded
 	apiKey: process.env.MULTIVISOR_API_KEY
 	deviceType: process.env.MULTIVISOR_DEVICE_TYPE
+	username: process.env.MULTIVISOR_USERNAME
 	apps: _.map appIds, (appId, ind) ->
 		app = { appId }
 		if isPreloaded
