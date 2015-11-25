@@ -71,9 +71,9 @@ bootstrapper.done = Promise.map(config.multivisor.apps, (app) ->
 		knex('config').whereIn('key', ['apiKey', 'username', 'userId', 'version']).delete()
 		.then ->
 			knex('config').insert([
-				{ key: 'apiKey', value: userConfig.apiKey }
-				{ key: 'username', value: userConfig.username }
-				{ key: 'userId', value: userConfig.userId }
+				{ key: 'apiKey', value: config.multivisor.apiKey }
+				{ key: 'username', value: config.multivisor.username }
+				{ key: 'userId', value: config.multivisor.userId }
 				{ key: 'version', value: utils.supervisorVersion }
 				{ key: 'bootstrapped', value: '1' }
 			])
