@@ -7,6 +7,7 @@ utils = require './utils'
 bootstrap = require './bootstrap'
 config = require './config'
 request = require 'request'
+_ = require 'lodash'
 
 knex.init.then ->
 	utils.mixpanelProperties.uuid = process.env.RESIN_DEVICE_UUID
@@ -18,7 +19,7 @@ knex.init.then ->
 	logsChannels = Promise.map(config.multivisor.apps, (app) ->
 		return { appId: app.appId, logsChannel: utils.getOrGenerateSecret("logsChannel#{app.appId}") }
 	).then (logsChannels) ->
-		channelsByAppId = _.indexBy(logsChannels, appId)
+		channelsByAppId = _.indexBy(logsChannels, 'appId')
 		return _.mapValues channelsByAppId, (logsChannelObject) -> logsChannelObject.logsChannel
 
 	bootstrap.startBootstrapping().then ->
