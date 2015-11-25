@@ -455,8 +455,7 @@ getEnvAndFormatRemoteApps = (deviceIds, remoteApps, uuids, apiKey) ->
 					env: JSON.stringify(env) # The env has to be stored as a JSON string for knex
 				}
 			]
-	.then(_.flatten)
-	.then(_.zip)
+	.spread(_.zip)
 	.then ([ remoteAppEnvs, remoteApps ]) ->
 		return [_.mapValues(_.indexBy(remoteAppEnvs, 'appId'), 'env'), _.indexBy(remoteApps, 'appId')]
 
