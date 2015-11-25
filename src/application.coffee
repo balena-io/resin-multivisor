@@ -91,7 +91,7 @@ application.kill = kill = (app, updateDB = true) ->
 	container = docker.getContainer(app.containerId)
 	container.stopAsync(t: 10)
 	.then ->
-		container.removeAsync()
+		container.removeAsync(v: true)
 	# Bluebird throws OperationalError for errors resulting in the normal execution of a promisified function.
 	.catch Promise.OperationalError, (err) ->
 		# Get the statusCode from the original cause and make sure statusCode its definitely a string for comparison
@@ -99,7 +99,7 @@ application.kill = kill = (app, updateDB = true) ->
 		statusCode = '' + err.statusCode
 		# 304 means the container was already stopped - so we can just remove it
 		if statusCode is '304'
-			return container.removeAsync()
+			return container.removeAsync(v: true)
 		# 404 means the container doesn't exist, precisely what we want! :D
 		if statusCode is '404'
 			return
