@@ -135,6 +135,7 @@ fetch = (app) ->
 			throw err
 
 application.start = start = (app) ->
+	return if !app.imageId?
 	volumes =
 		'/data': {}
 		'/lib/modules': {}
@@ -590,9 +591,10 @@ application.initialize = ->
 	knex('app').select()
 	.then (apps) ->
 		Promise.map apps, (app) ->
-			executeSpecialActionsAndBootConfig(JSON.parse(app.env))
-			.then ->
-				unlockAndStart(app)
+			if app.imageId?
+				executeSpecialActionsAndBootConfig(JSON.parse(app.env))
+				.then ->
+					unlockAndStart(app)
 	.catch (error) ->
 		console.error('Error starting apps:', error)
 	.then ->
