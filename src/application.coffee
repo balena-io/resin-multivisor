@@ -319,10 +319,6 @@ executeSpecialActionsAndBootConfig = (env) ->
 				if !_.has(executedSpecialActionEnvVars, key) or executedSpecialActionEnvVars[key] != env[key]
 					specialActionCallback(env[key])
 					executedSpecialActionEnvVars[key] = env[key]
-		#bootConfigVars = _.pick env, (val, key) ->
-		#	return _.startsWith(key, device.bootConfigEnvVarPrefix)
-		#if !_.isEmpty(bootConfigVars)
-		#	device.setBootConfig(bootConfigVars)
 
 wrapAsError = (err) ->
 	return err if _.isError(err)

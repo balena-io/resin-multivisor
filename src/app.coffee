@@ -14,9 +14,6 @@ knex.init.then ->
 	utils.mixpanelProperties.uuid = process.env.RESIN_DEVICE_UUID
 	utils.mixpanelTrack('Multivisor start')
 
-	#console.log('Starting connectivity check..')
-	#utils.connectivityCheck()
-
 	logsChannels = Promise.map(config.multivisor.apps, (app) ->
 		utils.getOrGenerateSecret("logsChannel#{app.appId}")
 		.then (channel) ->
@@ -57,15 +54,3 @@ knex.init.then ->
 
 			console.log('Starting Apps..')
 			application.initialize()
-
-			#updateIpAddr = ->
-			#	callback = (error, response, body ) ->
-			#		if !error && response.statusCode == 200 && body.Data.IPAddresses?
-			#			device.updateState(
-			#				ip_address: body.Data.IPAddresses.join(' ')
-			#			)
-			#	request.get({ url: "#{config.gosuperAddress}/v1/ipaddr", json: true }, callback )
-
-			#console.log('Starting periodic check for IP addresses..')
-			#setInterval(updateIpAddr, 30 * 1000) # Every 30s
-			#updateIpAddr()
