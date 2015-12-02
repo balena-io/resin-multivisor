@@ -12,8 +12,27 @@ mkdir -p /var/run/openvpn
 mkdir -p /data/docker
 ln -s /data/docker /var/lib/docker
 
-cd /app
-./wrapdocker
+cd /usr/src/multivisor
+
+rm /var/run/docker.pid
+
+# Move preloaded apps
+if [[ "$MULTIVISOR_PRELOADED_APPS" -eq "1" ]] && [ -d /var/lib/dind-docker ]; then
+	cp -R /var/lib/dind-docker /var/lib/docker
+	rm -rf /var/lib/dind-docker
+fi
+
+/bin/sh $(which dind) docker -d --storage-driver=vfs -g /var/lib/docker &
+
+(( timeout = 60 + SECONDS ))
+until [ -S /var/run/docker.sock ]; do
+	if (( SECONDS >= timeout )); then
+		echo "Timeout while trying to connect to docker"
+		rm -rf /var/lib/dind-docker
+		exit 1
+	fi
+	sleep 1
+done
 
 DATA_DIRECTORY=/data
 
@@ -30,4 +49,13 @@ tail -f /var/log/supervisor/supervisord.log &
 while [ ! -f /var/log/resin_supervisor_stdout.log ]; do
 	sleep 1
 done
-tail -fn 1000 /var/log/resin_supervisor_stdout.log
+tail -fn 1000 /var/log/resin_supervisor_stdout.log &
+
+if [[ "$@" -ne "" ]]; then
+	$@
+fi
+
+while true; do
+	echo "Container still running"
+	sleep 120
+done

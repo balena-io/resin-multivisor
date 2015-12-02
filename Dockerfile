@@ -1,39 +1,38 @@
-FROM gliderlabs/alpine
+FROM docker:1.6.2-dind
 
-RUN apk-install \
+RUN apk add --update \
+	bash \
 	binutils \
 	ca-certificates \
-	device-mapper \
-	docker \
 	e2fsprogs \
 	g++ \
 	iptables \
-	lxc \
 	make \
 	nodejs \
 	openvpn \
 	socat \
 	sqlite-dev \
-	supervisor
+	supervisor \
+	&& rm -rf /var/cache/apk/*
 
 # Copy supervisord configuration files
 COPY config/supervisor/ /etc/supervisor/
 COPY config/openvpn/ /etc/openvpn/
 
-# Install dependencies
-WORKDIR /app
-COPY package.json postinstall.sh /app/
-RUN JOBS=MAX npm install --unsafe-perm --production --no-optional \
+COPY package.json postinstall.sh /usr/src/multivisor/
+RUN cd /usr/src/multivisor \
+	&& JOBS=MAX npm install --unsafe-perm --production --no-optional \
+	&& cd /usr/src/multivisor/node_modules/sqlite3 && ./node_modules/.bin/node-pre-gyp install --build-from-source --sqlite=/usr/lib \
 	&& npm dedupe \
 	&& npm cache clean \
-	&& rm -rf /tmp/* \
-	&& cd /app/node_modules/sqlite3 && ./node_modules/.bin/node-pre-gyp install --build-from-source --sqlite=/usr/lib
+	&& rm -rf /tmp/*
 
 # Copy source
-COPY . /app/
-RUN chmod +x /app/entry.sh \
-	&& chmod +x /app/wrapdocker
+COPY . /usr/src/multivisor/
+RUN chmod +x /usr/src/multivisor/entry.sh \
+	&& chmod +x /usr/src/multivisor/preload.sh \
+	&& ln -s /usr/src/multivisor/preload.sh /bin/preload-multivisor
 
-RUN /app/node_modules/.bin/coffee -c /app/src
+RUN /usr/src/multivisor/node_modules/.bin/coffee -c /usr/src/multivisor/src
 
-CMD ["/app/entry.sh"]
+ENTRYPOINT ["/usr/src/multivisor/entry.sh"]
