@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
 
@@ -52,7 +52,9 @@ done
 tail -fn 1000 /var/log/resin_supervisor_stdout.log &
 
 if [[ "$@" -ne "" ]]; then
-	$@
+	CMD=$(which $1)
+	shift
+	$CMD $@
 fi
 
 while true; do
