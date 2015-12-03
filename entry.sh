@@ -14,7 +14,7 @@ ln -s /data/docker /var/lib/docker
 
 cd /usr/src/multivisor
 
-rm /var/run/docker.pid
+rm /var/run/docker.pid || true
 
 # Move preloaded apps
 if [[ "$MULTIVISOR_PRELOADED_APPS" -eq "1" ]] && [ -d /var/lib/dind-docker ]; then
