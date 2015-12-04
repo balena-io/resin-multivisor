@@ -21,6 +21,10 @@ fi
 
 imageIds=$(echo $MULTIVISOR_PRELOADED_IMAGE_IDS | tr "," "\n")
 
+mkdir -p /usr/src/multivisor/preloaded-images
+i=0
 for imageId in $imageIds; do
 	docker pull $imageId
+	docker save $imageId > /usr/src/multivisor/preloaded-images/$i.tar
+	docker rmi -f $imageId
 done

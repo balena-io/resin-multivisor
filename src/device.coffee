@@ -43,6 +43,10 @@ exports.getID = do ->
 exports.getDeviceType = ->
 	return config.multivisor.deviceType
 
+exports.currentState = {}
+_.map config.multivisor.apps, (app) ->
+	exports.currentState[app.appId] = {}
+
 # Calling this function updates the local device state, which is then used to synchronise
 # the remote device state, repeating any failed updates until successfully synchronised.
 # This function will also optimise updates by merging multiple updates and only sending the latest state.
@@ -91,6 +95,7 @@ exports.updateState = do ->
 	return (appId, updatedState = {}, retry = false) ->
 		# Remove any updates that match the last we successfully sent.
 		_.merge(targetState[appId], updatedState)
+		_.merge(exports.currentState[appId], updatedState)
 
 		# Only trigger applying state if an apply isn't already in progress.
 		if !applyPromise[appId].isPending()

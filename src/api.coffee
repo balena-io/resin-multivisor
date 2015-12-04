@@ -26,6 +26,13 @@ module.exports = (application) ->
 	api.get '/ping', (req, res) ->
 		res.send('OK')
 
+	api.get '/v1/device', (req, res) ->
+		appId = req.query.appId
+		if device.currentState[appId]?
+			res.status(200).send(device.currentState[appId])
+		else
+			res.status(404).send('App not found')
+
 	api.post '/v1/update', (req, res) ->
 		utils.mixpanelTrack('Update notification')
 		application.update(req.body.force)

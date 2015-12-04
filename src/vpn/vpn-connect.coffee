@@ -5,7 +5,7 @@ _ = require 'lodash'
 
 exports.createConnection = (uuid, apiKey, endpoint) ->
 	authfile = "/data/vpn/auth-#{uuid}.conf"
-	fs.readFileAsync('/app/src/vpn/client.conf.tmpl')
+	fs.readFileAsync('/usr/src/multivisor/src/vpn/client.conf.tmpl')
 	.then (templateText) ->
 		template = _.template(templateText)
 		fs.writeFileAsync("/data/vpn/#{uuid}.conf", template({ endpoint, authfile }))

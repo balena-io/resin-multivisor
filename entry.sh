@@ -16,23 +16,23 @@ cd /usr/src/multivisor
 
 rm /var/run/docker.pid || true
 
-# Move preloaded apps
-if [[ "$MULTIVISOR_PRELOADED_APPS" -eq "1" ]] && [ -d /var/lib/dind-docker ]; then
-	cp -R /var/lib/dind-docker /var/lib/docker
-	rm -rf /var/lib/dind-docker
-fi
-
 /bin/sh $(which dind) docker -d --storage-driver=vfs -g /var/lib/docker &
 
 (( timeout = 60 + SECONDS ))
 until [ -S /var/run/docker.sock ]; do
 	if (( SECONDS >= timeout )); then
 		echo "Timeout while trying to connect to docker"
-		rm -rf /var/lib/dind-docker
 		exit 1
 	fi
 	sleep 1
 done
+
+# Move preloaded apps
+if [[ "$MULTIVISOR_PRELOADED_APPS" -eq "1" ]] && [ -d /usr/src/multivisor/preloaded-images ]; then
+	docker load < /usr/src/multivisor/preloaded-images/*.tar
+	rm -rf /usr/src/multivisor/preloaded-images
+	rm -rf /var/lib/dind-docker
+fi
 
 DATA_DIRECTORY=/data
 
@@ -51,7 +51,7 @@ while [ ! -f /var/log/resin_supervisor_stdout.log ]; do
 done
 tail -fn 1000 /var/log/resin_supervisor_stdout.log &
 
-if [[ "$@" -ne "" ]]; then
+if [ -n "$1" ]; then
 	CMD=$(which $1)
 	shift
 	$CMD $@
