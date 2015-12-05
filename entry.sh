@@ -10,13 +10,13 @@ set -e
 mkdir -p /data/vpn
 mkdir -p /var/run/openvpn
 mkdir -p /data/docker
-ln -s /data/docker /var/lib/docker
+
 
 cd /usr/src/multivisor
 
 rm /var/run/docker.pid || true
 
-/bin/sh $(which dind) docker -d --storage-driver=vfs -g /var/lib/docker &
+/bin/sh $(which dind) docker -d --storage-driver=vfs -g /data/docker &
 
 (( timeout = 60 + SECONDS ))
 until [ -S /var/run/docker.sock ]; do
