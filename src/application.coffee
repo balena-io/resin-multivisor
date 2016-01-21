@@ -7,8 +7,7 @@ config = require './config'
 dockerUtils = require './docker-utils'
 Promise = require 'bluebird'
 utils = require './utils'
-tty = require './lib/tty'
-logger = require './lib/logger'
+Logger = require './lib/logger'
 { cachedResinApi } = require './request'
 device = require './device'
 lockFile = Promise.promisifyAll(require('lockfile'))
@@ -80,7 +79,7 @@ logSystemEvent = (logType, app, error) ->
 		if _.isEmpty(errMessage)
 			errMessage = 'Unknown cause'
 		message += " due to '#{errMessage}'"
-	logger.log({ message, isSystem: true })
+	application.loggers[app.appId].log({ message, isSystem: true })
 	utils.mixpanelTrack(logType.eventName, {app, error})
 	return
 
@@ -88,16 +87,11 @@ application = {}
 
 application.kill = kill = (app, updateDB = true) ->
 	logSystemEvent(logTypes.stopApp, app)
-	device.updateState(status: 'Stopping')
+	device.updateState(app.appId, status: 'Stopping')
 	container = docker.getContainer(app.containerId)
-	tty.stop(app)
-	.catch (err) ->
-		console.error('Error stopping tty', err)
-		return # Even if stopping the tty fails we want to finish stopping the container
+	container.stopAsync(t: 10)
 	.then ->
-		container.stopAsync(t: 10)
-	.then ->
-		container.removeAsync()
+		container.removeAsync(v: true)
 	# Bluebird throws OperationalError for errors resulting in the normal execution of a promisified function.
 	.catch Promise.OperationalError, (err) ->
 		# Get the statusCode from the original cause and make sure statusCode its definitely a string for comparison
@@ -105,7 +99,7 @@ application.kill = kill = (app, updateDB = true) ->
 		statusCode = '' + err.statusCode
 		# 304 means the container was already stopped - so we can just remove it
 		if statusCode is '304'
-			return container.removeAsync()
+			return container.removeAsync(v: true)
 		# 404 means the container doesn't exist, precisely what we want! :D
 		if statusCode is '404'
 			return
@@ -129,31 +123,26 @@ fetch = (app) ->
 	docker.getImage(app.imageId).inspectAsync()
 	.catch (error) ->
 		logSystemEvent(logTypes.downloadApp, app)
-		device.updateState(status: 'Downloading')
+		device.updateState(app.appId, status: 'Downloading')
 		dockerUtils.fetchImageWithProgress app.imageId, (progress) ->
-			device.updateState(download_progress: progress.percentage)
+			device.updateState(app.appId, download_progress: progress.percentage)
 		.then ->
 			logSystemEvent(logTypes.downloadAppSuccess, app)
-			device.updateState(download_progress: null)
+			device.updateState(app.appId, download_progress: null)
 			docker.getImage(app.imageId).inspectAsync()
 		.catch (err) ->
 			logSystemEvent(logTypes.downloadAppError, app, err)
 			throw err
 
 application.start = start = (app) ->
+	return if !app.imageId?
 	volumes =
 		'/data': {}
-		'/lib/modules': {}
-		'/lib/firmware': {}
-		'/run/dbus': {}
 	binds = [
 		'/resin-data/' + app.appId + ':/data'
-		'/lib/modules:/lib/modules'
-		'/lib/firmware:/lib/firmware'
-		'/run/dbus:/run/dbus'
-		'/run/dbus:/host_run/dbus'
-		'/etc/resolv.conf:/etc/resolv.conf:rw'
 	]
+	netMode = 'bridge'
+	privileged = false
 	Promise.try ->
 		# Parse the env vars before trying to access them, that's because they have to be stringified for knex..
 		JSON.parse(app.env)
@@ -163,6 +152,13 @@ application.start = start = (app) ->
 			.split(',')
 			.map((port) -> port.trim())
 			.filter(isValidPort)
+
+		if env.MULTIVISOR_BINDS?
+			binds = _.union(binds, env.MULTIVISOR_BINDS.split(','))
+		if env.MULTIVISOR_NETWORK_MODE?
+			netMode = env.MULTIVISOR_NETWORK_MODE
+		if env.MULTIVISOR_PRIVILEGED == '1'
+			privileged = true
 
 		if app.containerId?
 			# If we have a container id then check it exists and if so use it.
@@ -176,7 +172,7 @@ application.start = start = (app) ->
 			fetch(app)
 			.then (imageInfo) ->
 				logSystemEvent(logTypes.installApp, app)
-				device.updateState(status: 'Installing')
+				device.updateState(app.appId, status: 'Installing')
 
 				ports = {}
 				if portList?
@@ -210,14 +206,14 @@ application.start = start = (app) ->
 				knex('app').insert(app) if affectedRows == 0
 		.tap (container) ->
 			logSystemEvent(logTypes.startApp, app)
-			device.updateState(status: 'Starting')
+			device.updateState(app.appId, status: 'Starting')
 			ports = {}
 			if portList?
 				portList.forEach (port) ->
 					ports[port + '/tcp'] = [ HostPort: port ]
 			container.startAsync(
-				Privileged: true
-				NetworkMode: 'host'
+				Privileged: privileged
+				NetworkMode: netMode
 				PortBindings: ports
 				Binds: binds
 			)
@@ -229,12 +225,12 @@ application.start = start = (app) ->
 				logSystemEvent(logTypes.startAppError, app, err)
 				throw err
 			.then ->
-				device.updateState(commit: app.commit)
-				logger.attach(app)
+				device.updateState(app.appId, commit: app.commit)
+				application.loggers[app.appId].attach(app)
 	.tap ->
 		logSystemEvent(logTypes.startAppSuccess, app)
 	.finally ->
-		device.updateState(status: 'Idle')
+		device.updateState(app.appId, status: 'Idle')
 
 getEnvironment = do ->
 	envApiEndpoint = url.resolve(config.apiEndpoint, '/environment')
@@ -253,11 +249,11 @@ getEnvironment = do ->
 
 lockPath = (app) ->
 	appId = app.appId ? app
-	return "/mnt/root/resin-data/#{appId}/resin-updates.lock"
+	return "/resin-data/#{appId}/resin-updates.lock"
 
 killmePath = (app) ->
 	appId = app.appId ? app
-	return "/mnt/root/resin-data/#{appId}/resin-kill-me"
+	return "/resin-data/#{appId}/resin-kill-me"
 
 # At boot, all apps should be unlocked *before* start to prevent a deadlock
 application.unlockAndStart = unlockAndStart = (app) ->
@@ -310,8 +306,6 @@ specialActionEnvVars =
 	'RESIN_SUPERVISOR_UPDATE_STRATEGY': null
 	'RESIN_SUPERVISOR_HANDOVER_TIMEOUT': null
 	'RESIN_SUPERVISOR_OVERRIDE_LOCK': null
-	'RESIN_SUPERVISOR_VPN_CONTROL': utils.vpnControl
-	'RESIN_SUPERVISOR_CONNECTIVITY_CHECK': utils.connectivityCheck
 	'RESIN_SUPERVISOR_POLL_INTERVAL': apiPollInterval
 	'RESIN_SUPERVISOR_LOG_CONTROL': utils.resinLogControl
 
@@ -325,10 +319,6 @@ executeSpecialActionsAndBootConfig = (env) ->
 				if !_.has(executedSpecialActionEnvVars, key) or executedSpecialActionEnvVars[key] != env[key]
 					specialActionCallback(env[key])
 					executedSpecialActionEnvVars[key] = env[key]
-		bootConfigVars = _.pick env, (val, key) ->
-			return _.startsWith(key, device.bootConfigEnvVarPrefix)
-		if !_.isEmpty(bootConfigVars)
-			device.setBootConfig(bootConfigVars)
 
 wrapAsError = (err) ->
 	return err if _.isError(err)
@@ -419,28 +409,35 @@ updateUsingStrategy = (strategy, options) ->
 		strategy = 'download-then-kill'
 	updateStrategies[strategy](options)
 
-getRemoteApps = (uuid, apiKey) ->
-	cachedResinApi.get
-		resource: 'application'
-		options:
-			select: [
-				'id'
-				'git_repository'
-				'commit'
-			]
-			filter:
-				commit: $ne: null
-				device:
-					uuid: uuid
-		customOptions:
-			apikey: apiKey
+getRemoteApps = (apiKey) ->
+	Promise.map config.multivisor.apps, (app) ->
+		device.getUUID(app.appId)
+		.then (uuid) ->
+			cachedResinApi.get
+				resource: 'application'
+				options:
+					select: [
+						'id'
+						'git_repository'
+						'commit'
+					]
+					filter:
+						commit: $ne: null
+						device:
+							uuid: uuid
+				customOptions:
+					apikey: apiKey
+	.then(_.flatten)
 
-getEnvAndFormatRemoteApps = (deviceId, remoteApps, uuid, apiKey) ->
+
+getEnvAndFormatRemoteApps = (deviceIds, remoteApps, uuids, apiKey) ->
+	deviceIds = _.mapValues _.indexBy(deviceIds, 'appId'), (d) ->
+		return d.deviceId
 	Promise.map remoteApps, (app) ->
-		getEnvironment(app.id, deviceId, apiKey)
+		getEnvironment(app.id, deviceIds[app.id], apiKey)
 		.then (environment) ->
 			app.environment_variable = environment
-			utils.extendEnvVars(app.environment_variable, uuid)
+			utils.extendEnvVars(app.environment_variable, uuids[app.id])
 		.then (fullEnv) ->
 			env = _.omit(fullEnv, _.keys(specialActionEnvVars))
 			return [
@@ -455,8 +452,7 @@ getEnvAndFormatRemoteApps = (deviceId, remoteApps, uuid, apiKey) ->
 					env: JSON.stringify(env) # The env has to be stored as a JSON string for knex
 				}
 			]
-	.then(_.flatten)
-	.then(_.zip)
+	.spread(_.zip)
 	.then ([ remoteAppEnvs, remoteApps ]) ->
 		return [_.mapValues(_.indexBy(remoteAppEnvs, 'appId'), 'env'), _.indexBy(remoteApps, 'appId')]
 
@@ -488,7 +484,9 @@ compareForUpdate = (localApps, remoteApps, localAppEnvs, remoteAppEnvs) ->
 	return { toBeRemoved, toBeDownloaded, toBeInstalled, toBeUpdated, appsWithChangedEnvs, allAppIds }
 
 getConfig = (key) ->
-	knex('config').select('value').where({ key }).get(0).get('value')
+	knex('config').select('value').where({ key })
+	.then ([ conf ]) ->
+		return conf?.value
 
 application.update = update = (force) ->
 	if updateStatus.state isnt UPDATE_IDLE
@@ -498,11 +496,17 @@ application.update = update = (force) ->
 		return
 	updateStatus.state = UPDATE_UPDATING
 	bootstrap.done.then ->
-		Promise.join getConfig('apiKey'), getConfig('uuid'), knex('app').select(), (apiKey, uuid, apps) ->
-			deviceId = device.getID()
-			remoteApps = getRemoteApps(uuid, apiKey)
+		Promise.join getConfig('apiKey'), knex('app').select(), (apiKey, apps) ->
+			apps = _.reject apps, (app) -> !app.imageId?
+			deviceIds = Promise.map config.multivisor.apps, (app) ->
+				device.getID(app.appId)
+				.then (deviceId) ->
+					return { appId: app.appId, deviceId }
+			uuids = Promise.map config.multivisor.apps, (app) ->
+				device.getUUID(app.appId)
+			remoteApps = getRemoteApps(apiKey)
 
-			Promise.join deviceId, remoteApps, uuid, apiKey, getEnvAndFormatRemoteApps
+			Promise.join deviceIds, remoteApps, uuids, apiKey, getEnvAndFormatRemoteApps
 			.then ([ remoteAppEnvs, remoteApps ]) ->
 				{ localApps, localAppEnvs } = formatLocalApps(apps)
 				resourcesForUpdate = compareForUpdate(localApps, remoteApps, localAppEnvs, remoteAppEnvs)
@@ -583,7 +587,8 @@ application.update = update = (force) ->
 			console.log('Scheduling another update attempt due to failure: ', delayTime, err)
 			setTimeout(update, delayTime, force)
 		.finally ->
-			device.updateState(status: 'Idle')
+			_.map config.multivisor.apps, (app) ->
+				device.updateState(app.appId, status: 'Idle')
 			if updateStatus.state is UPDATE_REQUIRED
 				# If an update is required then schedule it
 				setTimeout(update, 1, updateStatus.forceNext)
@@ -595,9 +600,10 @@ application.initialize = ->
 	knex('app').select()
 	.then (apps) ->
 		Promise.map apps, (app) ->
-			executeSpecialActionsAndBootConfig(JSON.parse(app.env))
-			.then ->
-				unlockAndStart(app)
+			if app.imageId?
+				executeSpecialActionsAndBootConfig(JSON.parse(app.env))
+				.then ->
+					unlockAndStart(app)
 	.catch (error) ->
 		console.error('Error starting apps:', error)
 	.then ->
@@ -605,10 +611,13 @@ application.initialize = ->
 		application.poll()
 		application.update()
 
-module.exports = (logsChannel) ->
-	logger.init(
+application.loggers = {}
+
+module.exports = (logsChannels) ->
+	Logger.init(
 		dockerSocket: config.dockerSocket
 		pubnub: config.pubnub
-		channel: "device-#{logsChannel}-logs"
 	)
+	_.map config.multivisor.apps, (app) ->
+		application.loggers[app.appId] = Logger.new("device-#{logsChannels[app.appId]}-logs")
 	return application

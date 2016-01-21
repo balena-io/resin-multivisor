@@ -1,12 +1,11 @@
 {
-  "name": "resin-supervisor",
+  "name": "resin-multivisor",
   "version": "1.2.1",
   "scripts": {
     "postinstall": "bash postinstall.sh",
     "start": "./entry.sh"
   },
   "dependencies": {
-    "blinking": "~0.0.2",
     "bluebird": "^2.9.24",
     "body-parser": "^1.12.0",
     "coffee-script": "~1.9.1",
@@ -18,19 +17,16 @@
     "lockfile": "^1.0.1",
     "lodash": "^3.0.0",
     "mixpanel": "0.0.20",
-    "network-checker": "~0.0.5",
-    "ngrok": "~0.1.97",
     "pinejs-client": "^1.4.0",
     "pubnub": "^3.7.13",
     "request": "^2.51.0",
     "resin-register-device": "^2.0.0",
     "rwlock": "^5.0.0",
     "server-destroy": "^1.0.0",
-    "sqlite3": "~3.0.4",
-    "tty.js": "0.2.14-1",
+    "sqlite3": "3.0.9",
     "typed-error": "~0.1.0"
   },
   "engines": {
-    "node": "0.10.22"
+    "node": "0.10.40"
   }
 }
